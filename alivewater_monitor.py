@@ -10,8 +10,7 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
 from telegram import Bot
-from telegram import Update
-from telegram.ext import Updater, CommandHandler, CallbackContext
+from telegram.ext import Updater, CommandHandler
 
 # Конфигурация
 CONFIG = {
@@ -169,7 +168,7 @@ def format_problems_message(problems):
         message += f"<b>Терминал:</b> {problem['terminal']}\n<b>Ссылка:</b> {problem['url']}\n\n"
     return message
 
-def start(update: Update, context: CallbackContext):
+def start(update, context):
     update.message.reply_text(
         "Привет! Я бот для мониторинга AliveWater.\n\n"
         "Доступные команды:\n"
@@ -178,8 +177,8 @@ def start(update: Update, context: CallbackContext):
         "/status - Проверить статус системы"
     )
 
-def check_sales_command(update: Update, context: CallbackContext):
-    if update.effective_user.id not in CONFIG['telegram_admin_ids']:
+def check_sales_command(update, context):
+    if update.message.from_user.id not in CONFIG['telegram_admin_ids']:
         update.message.reply_text("У вас нет прав для выполнения этой команды.")
         return
     
@@ -207,8 +206,8 @@ def check_sales_command(update: Update, context: CallbackContext):
     finally:
         driver.quit()
 
-def check_terminals_command(update: Update, context: CallbackContext):
-    if update.effective_user.id not in CONFIG['telegram_admin_ids']:
+def check_terminals_command(update, context):
+    if update.message.from_user.id not in CONFIG['telegram_admin_ids']:
         update.message.reply_text("У вас нет прав для выполнения этой команды.")
         return
     
@@ -236,7 +235,7 @@ def check_terminals_command(update: Update, context: CallbackContext):
     finally:
         driver.quit()
 
-def status_command(update: Update, context: CallbackContext):
+def status_command(update, context):
     update.message.reply_text(
         "Система мониторинга AliveWater работает.\n"
         f"Последняя проверка: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
