@@ -37,9 +37,17 @@ bot = Bot(token=CONFIG['telegram_token'])
 def load_data():
     try:
         with open(CONFIG['data_file'], 'r') as f:
-            return json.load(f)
+            data = json.load(f)
+            # Проверяем структуру данных и преобразуем при необходимости
+            if "last_sale_ids" not in data:
+                # Конвертируем старый формат в новый
+                data["last_sale_ids"] = [sale["number"] for sale in data.get("last_sales", [])]
+                data["last_notification_urls"] = [problem["url"] for problem in data.get("last_notifications", [])]
+                del data["last_sales"]
+                del data["last_notifications"]
+            return data
     except (FileNotFoundError, json.JSONDecodeError):
-        return {"last_sales": [], "last_notifications": []}
+        return {"last_sale_ids": [], "last_notification_urls": []}
 
 def save_data(data):
     with open(CONFIG['data_file'], 'w') as f:
@@ -176,14 +184,47 @@ def check_terminals(driver):
         return []
 
 def send_telegram_notification(message):
+    MAX_MESSAGE_LENGTH = 4096  # Максимальная длина сообщения в Telegram
+    
     for chat_id in CONFIG['telegram_admin_ids']:
         try:
-            bot.send_message(
-                chat_id=chat_id,
-                text=message,
-                parse_mode="HTML",
-                disable_web_page_preview=True
-            )
+            # Если сообщение слишком длинное, разбиваем его на части
+            if len(message) > MAX_MESSAGE_LENGTH:
+                # Разбиваем сообщение по разделителям
+                parts = message.split("────────────────────\n")
+                current_part = ""
+                
+                for part in parts:
+                    if len(current_part) + len(part) + 100 > MAX_MESSAGE_LENGTH and current_part:
+                        # Отправляем текущую часть
+                        bot.send_message(
+                            chat_id=chat_id,
+                            text=current_part,
+                            parse_mode="HTML",
+                            disable_web_page_preview=True
+                        )
+                        current_part = ""
+                        time.sleep(1)  # Задержка между сообщениями
+                    
+                    current_part += part + "────────────────────\n"
+                
+                # Отправляем оставшуюся часть
+                if current_part:
+                    bot.send_message(
+                        chat_id=chat_id,
+                        text=current_part,
+                        parse_mode="HTML",
+                        disable_web_page_preview=True
+                    )
+            else:
+                # Отправляем сообщение целиком
+                bot.send_message(
+                    chat_id=chat_id,
+                    text=message,
+                    parse_mode="HTML",
+                    disable_web_page_preview=True
+                )
+            
             logger.info(f"Сообщение отправлено в Telegram: {chat_id}")
         except Exception as e:
             logger.error(f"Ошибка отправки в Telegram: {e}")
@@ -258,11 +299,17 @@ def check_sales_command(update, context):
             sales = check_sales(driver)
             data = load_data()
             
-            new_sales = [s for s in sales if s not in data['last_sales']]
+            # Получаем ID текущих продаж
+            current_sale_ids = [sale["number"] for sale in sales]
+            
+            # Находим новые продажи
+            new_sales = [sale for sale in sales if sale["number"] not in data["last_sale_ids"]]
+            
             if new_sales:
                 message = format_sales(new_sales)
                 send_telegram_notification(message)
-                data['last_sales'] = sales
+                # Обновляем сохраненные ID
+                data["last_sale_ids"] = current_sale_ids
                 save_data(data)
                 update.message.reply_text(f"✅ Найдено {len(new_sales)} новых продаж!", parse_mode="HTML")
             else:
@@ -287,11 +334,17 @@ def check_terminals_command(update, context):
             problems = check_terminals(driver)
             data = load_data()
             
-            new_problems = [p for p in problems if p not in data['last_notifications']]
+            # Получаем URL текущих проблем
+            current_problem_urls = [problem["url"] for problem in problems]
+            
+            # Находим новые проблемы
+            new_problems = [problem for problem in problems if problem["url"] not in data["last_notification_urls"]]
+            
             if new_problems:
                 message = format_problems(new_problems)
                 send_telegram_notification(message)
-                data['last_notifications'] = problems
+                # Обновляем сохраненные URL
+                data["last_notification_urls"] = current_problem_urls
                 save_data(data)
                 update.message.reply_text(f"⚠️ Найдено {len(new_problems)} проблем с терминалами!", parse_mode="HTML")
             else:
@@ -322,17 +375,19 @@ def main_monitoring():
             
             # Проверка продаж
             sales = check_sales(driver)
-            new_sales = [s for s in sales if s not in data['last_sales']]
+            current_sale_ids = [sale["number"] for sale in sales]
+            new_sales = [sale for sale in sales if sale["number"] not in data["last_sale_ids"]]
             if new_sales:
                 send_telegram_notification(format_sales(new_sales))
-                data['last_sales'] = sales
+                data["last_sale_ids"] = current_sale_ids
             
             # Проверка терминалов
             problems = check_terminals(driver)
-            new_problems = [p for p in problems if p not in data['last_notifications']]
+            current_problem_urls = [problem["url"] for problem in problems]
+            new_problems = [problem for problem in problems if problem["url"] not in data["last_notification_urls"]]
             if new_problems:
                 send_telegram_notification(format_problems(new_problems))
-                data['last_notifications'] = problems
+                data["last_notification_urls"] = current_problem_urls
             
             save_data(data)
             logger.info("Автоматическая проверка завершена успешно")
