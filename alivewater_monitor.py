@@ -2,7 +2,7 @@ import os
 import time
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
@@ -34,6 +34,10 @@ CONFIG = {
 # Инициализация бота Telegram
 bot = Bot(token=CONFIG['telegram_token'])
 
+# Функция для получения московского времени (UTC+3)
+def moscow_time():
+    return datetime.utcnow() + timedelta(hours=3)
+
 def load_data():
     try:
         with open(CONFIG['data_file'], 'r') as f:
@@ -43,8 +47,10 @@ def load_data():
                 # Конвертируем старый формат в новый
                 data["last_sale_ids"] = [sale["number"] for sale in data.get("last_sales", [])]
                 data["last_notification_urls"] = [problem["url"] for problem in data.get("last_notifications", [])]
-                del data["last_sales"]
-                del data["last_notifications"]
+                if "last_sales" in data:
+                    del data["last_sales"]
+                if "last_notifications" in data:
+                    del data["last_notifications"]
             return data
     except (FileNotFoundError, json.JSONDecodeError):
         return {"last_sale_ids": [], "last_notification_urls": []}
@@ -180,7 +186,7 @@ def check_terminals(driver):
                 })
         return problems
     except Exception as e:
-        logger.error(f"Ошибка при проверке терминалов: {str(e)}")
+        logger.error(f"Ошибка при проверке аппаратов: {str(e)}")
         return []
 
 def send_telegram_notification(message):
@@ -235,10 +241,16 @@ def format_sales(sales):
     
     message = "💰 <b>НОВЫЕ ПРОДАЖИ</b> 💰\n\n"
     for sale in sales:
+        # Форматируем время (если нужно)
+        try:
+            sale_time = datetime.strptime(sale['time'], "%H:%M:%S").strftime("%H:%M")
+        except:
+            sale_time = sale['time']
+            
         message += (
             f"🔹 <b>Продажа #{sale['number']}</b>\n"
             f"📍 <b>Адрес:</b> {sale['address']}\n"
-            f"🕒 <b>Время:</b> {sale['time']}\n"
+            f"🕒 <b>Время:</b> {sale_time}\n"
             f"💧 <b>Литры:</b> {sale['liters']}\n"
             f"💸 <b>Сумма:</b> {sale['total']} руб.\n"
             f"🧾 <b>Оплата:</b> {sale['payment']}\n"
@@ -249,16 +261,16 @@ def format_sales(sales):
 
 def format_problems(problems):
     if not problems:
-        return "✅ Проблем с терминалами не обнаружено"
+        return "✅ Проблем с аппаратами не обнаружено"
     
-    message = "⚠️ <b>ПРОБЛЕМЫ С ТЕРМИНАЛАМИ</b> ⚠️\n\n"
+    message = "⚠️ <b>ПРОБЛЕМЫ С АППАРАТАМИ</b> ⚠️\n\n"
     for problem in problems:
         message += (
-            f"🔴 <b>Терминал:</b> {problem['terminal']}\n"
+            f"🔴 <b>Аппарат:</b> {problem['terminal']}\n"
             f"🔗 <b>Ссылка:</b> {problem['url']}\n"
             f"────────────────────\n"
         )
-    message += f"\nВсего проблемных терминалов: <b>{len(problems)}</b>"
+    message += f"\nВсего проблемных аппаратов: <b>{len(problems)}</b>"
     return message
 
 def start(update, context):
@@ -266,7 +278,7 @@ def start(update, context):
         "🚰 <b>Бот мониторинга AliveWater</b> 🚰\n\n"
         "Выберите действие:\n\n"
         "💳 /check_sales - Проверить новые продажи\n"
-        "⚠️ /check_terminals - Проверить состояние терминалов\n"
+        "⚠️ /check_terminals - Проверить состояние аппаратов\n"
         "ℹ️ /status - Статус системы\n"
         "🆘 /help - Помощь"
     )
@@ -277,11 +289,11 @@ def help_command(update, context):
         "🆘 <b>Помощь по боту</b>\n\n"
         "Этот бот автоматически отслеживает:\n"
         "- Новые продажи воды 💧\n"
-        "- Проблемы с терминалами ⚠️\n\n"
+        "- Проблемы с аппаратами ⚠️\n\n"
         "Автоматическая проверка происходит каждые 5 минут\n\n"
         "<b>Доступные команды:</b>\n"
         "💳 /check_sales - Проверить новые продажи\n"
-        "⚠️ /check_terminals - Проверить состояние терминалов\n"
+        "⚠️ /check_terminals - Проверить состояние аппаратов\n"
         "ℹ️ /status - Статус системы\n"
         "🆘 /help - Помощь"
     )
@@ -327,7 +339,7 @@ def check_terminals_command(update, context):
         update.message.reply_text("⛔ Доступ запрещен")
         return
     
-    update.message.reply_text("🔍 Проверяю состояние терминалов...")
+    update.message.reply_text("🔍 Проверяю состояние аппаратов...")
     try:
         driver = init_browser()
         if login(driver):
@@ -346,9 +358,9 @@ def check_terminals_command(update, context):
                 # Обновляем сохраненные URL
                 data["last_notification_urls"] = current_problem_urls
                 save_data(data)
-                update.message.reply_text(f"⚠️ Найдено {len(new_problems)} проблем с терминалами!", parse_mode="HTML")
+                update.message.reply_text(f"⚠️ Найдено {len(new_problems)} проблем с аппаратами!", parse_mode="HTML")
             else:
-                update.message.reply_text("✅ Проблем с терминалами не обнаружено", parse_mode="HTML")
+                update.message.reply_text("✅ Проблем с аппаратами не обнаружено", parse_mode="HTML")
         else:
             update.message.reply_text("🔐 Ошибка авторизации", parse_mode="HTML")
     except Exception as e:
@@ -361,7 +373,7 @@ def status_command(update, context):
     status_text = (
         "🟢 <b>Статус системы</b>\n\n"
         "Система мониторинга AliveWater работает в штатном режиме\n"
-        f"🕒 Последняя проверка: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
+        f"🕒 Последняя проверка: {moscow_time().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
         "Следующая автоматическая проверка через 5 минут"
     )
     update.message.reply_text(status_text, parse_mode="HTML")
@@ -381,7 +393,7 @@ def main_monitoring():
                 send_telegram_notification(format_sales(new_sales))
                 data["last_sale_ids"] = current_sale_ids
             
-            # Проверка терминалов
+            # Проверка аппаратов
             problems = check_terminals(driver)
             current_problem_urls = [problem["url"] for problem in problems]
             new_problems = [problem for problem in problems if problem["url"] not in data["last_notification_urls"]]
