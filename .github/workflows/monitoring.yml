@@ -23,7 +23,7 @@ jobs:
         python -m pip install --upgrade pip
         pip install selenium python-telegram-bot==13.7 webdriver-manager
         
-    - name: Install Chrome and ChromeDriver
+    - name: Install Chrome
       run: |
         sudo apt-get update
         sudo apt-get install -y chromium-browser chromium-chromedriver
