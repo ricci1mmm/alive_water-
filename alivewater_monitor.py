@@ -271,7 +271,7 @@ def main_monitoring():
         driver.quit()
 
 def main():
-    # Инициализация Telegram бота (исправленная версия)
+    # ИСПРАВЛЕННАЯ ИНИЦИАЛИЗАЦИЯ Updater
     updater = Updater(CONFIG['telegram_token'], use_context=True)
     dispatcher = updater.dispatcher
     
