@@ -7,7 +7,8 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.options import Options
-from telegram import Bot, Update, ParseMode
+from telegram import Bot, Update
+from telegram.constants import ParseMode
 from telegram.ext import Updater, CommandHandler, CallbackContext
 
 # Конфигурация
@@ -265,7 +266,7 @@ def main_monitoring():
 
 def main():
     # Инициализация Telegram бота
-    updater = Updater(token=CONFIG['telegram_token'], use_context=True)
+    updater = Updater(token=CONFIG['telegram_token'])
     dispatcher = updater.dispatcher
     
     # Регистрация обработчиков команд
