@@ -43,17 +43,15 @@ def load_data():
         with open(CONFIG['data_file'], 'r') as f:
             data = json.load(f)
             # Проверяем структуру данных и преобразуем при необходимости
-            if "last_sale_ids" not in data:
+            if "last_sale_id" not in data:
                 # Конвертируем старый формат в новый
-                data["last_sale_ids"] = [sale["number"] for sale in data.get("last_sales", [])]
-                data["last_notification_urls"] = [problem["url"] for problem in data.get("last_notifications", [])]
-                if "last_sales" in data:
-                    del data["last_sales"]
-                if "last_notifications" in data:
-                    del data["last_notifications"]
+                if "last_sale_ids" in data and data["last_sale_ids"]:
+                    data["last_sale_id"] = data["last_sale_ids"][0] if data["last_sale_ids"] else ""
+                else:
+                    data["last_sale_id"] = ""
             return data
     except (FileNotFoundError, json.JSONDecodeError):
-        return {"last_sale_ids": [], "last_notification_urls": []}
+        return {"last_sale_id": "", "last_notification_urls": []}
 
 def save_data(data):
     with open(CONFIG['data_file'], 'w') as f:
@@ -239,7 +237,12 @@ def format_sales(sales):
     if not sales:
         return "🛍️ Нет новых продаж"
     
-    message = "💰 <b>НОВЫЕ ПРОДАЖИ</b> 💰\n\n"
+    if len(sales) > 20:
+        message = f"💰 <b>ПОСЛЕДНИЕ 20 ПРОДАЖ ИЗ {len(sales)}</b> 💰\n\n"
+        sales = sales[:20]
+    else:
+        message = "💰 <b>НОВЫЕ ПРОДАЖИ</b> 💰\n\n"
+    
     for sale in sales:
         # Форматируем время (если нужно)
         try:
@@ -256,7 +259,6 @@ def format_sales(sales):
             f"🧾 <b>Оплата:</b> {sale['payment']}\n"
             f"────────────────────\n"
         )
-    message += f"\nВсего новых продаж: <b>{len(sales)}</b>"
     return message
 
 def format_problems(problems):
@@ -277,7 +279,7 @@ def start(update, context):
     menu_text = (
         "🚰 <b>Бот мониторинга AliveWater</b> 🚰\n\n"
         "Выберите действие:\n\n"
-        "💳 /check_sales - Проверить новые продажи\n"
+        "💳 /check_sales - Проверить продажи\n"
         "⚠️ /check_terminals - Проверить состояние аппаратов\n"
         "ℹ️ /status - Статус системы\n"
         "🆘 /help - Помощь"
@@ -292,7 +294,7 @@ def help_command(update, context):
         "- Проблемы с аппаратами ⚠️\n\n"
         "Автоматическая проверка происходит каждые 5 минут\n\n"
         "<b>Доступные команды:</b>\n"
-        "💳 /check_sales - Проверить новые продажи\n"
+        "💳 /check_sales - Показать последние продажи\n"
         "⚠️ /check_terminals - Проверить состояние аппаратов\n"
         "ℹ️ /status - Статус системы\n"
         "🆘 /help - Помощь"
@@ -304,28 +306,21 @@ def check_sales_command(update, context):
         update.message.reply_text("⛔ Доступ запрещен")
         return
     
-    update.message.reply_text("🔍 Проверяю новые продажи...")
+    update.message.reply_text("🔍 Проверяю продажи...")
     try:
         driver = init_browser()
         if login(driver):
             sales = check_sales(driver)
-            data = load_data()
             
-            # Получаем ID текущих продаж
-            current_sale_ids = [sale["number"] for sale in sales]
+            if not sales:
+                update.message.reply_text("🛍️ Нет данных о продажах", parse_mode="HTML")
+                return
             
-            # Находим новые продажи
-            new_sales = [sale for sale in sales if sale["number"] not in data["last_sale_ids"]]
-            
-            if new_sales:
-                message = format_sales(new_sales)
-                send_telegram_notification(message)
-                # Обновляем сохраненные ID
-                data["last_sale_ids"] = current_sale_ids
-                save_data(data)
-                update.message.reply_text(f"✅ Найдено {len(new_sales)} новых продаж!", parse_mode="HTML")
-            else:
-                update.message.reply_text("🛍️ Новых продаж не обнаружено", parse_mode="HTML")
+            # Показываем только последние 10 продаж
+            recent_sales = sales[:10]
+            message = format_sales(recent_sales)
+            send_telegram_notification(message)
+            update.message.reply_text(f"ℹ️ Показано последних {len(recent_sales)} продаж", parse_mode="HTML")
         else:
             update.message.reply_text("🔐 Ошибка авторизации", parse_mode="HTML")
     except Exception as e:
@@ -350,7 +345,7 @@ def check_terminals_command(update, context):
             current_problem_urls = [problem["url"] for problem in problems]
             
             # Находим новые проблемы
-            new_problems = [problem for problem in problems if problem["url"] not in data["last_notification_urls"]]
+            new_problems = [problem for problem in problems if problem["url"] not in data.get("last_notification_urls", [])]
             
             if new_problems:
                 message = format_problems(new_problems)
@@ -387,21 +382,45 @@ def main_monitoring():
             
             # Проверка продаж
             sales = check_sales(driver)
-            current_sale_ids = [sale["number"] for sale in sales]
-            new_sales = [sale for sale in sales if sale["number"] not in data["last_sale_ids"]]
-            if new_sales:
-                send_telegram_notification(format_sales(new_sales))
-                data["last_sale_ids"] = current_sale_ids
+            
+            if sales:
+                # Находим ID самой последней продажи
+                latest_sale_id = sales[0]["number"] if sales else ""
+                
+                # Если у нас есть сохраненный ID
+                if data.get("last_sale_id"):
+                    # Находим индекс последней сохраненной продажи
+                    found_index = next((i for i, sale in enumerate(sales) if sale["number"] == data["last_sale_id"]), -1)
+                    
+                    # Если нашли, берем все продажи до этого индекса (новые продажи)
+                    if found_index > 0:
+                        new_sales = sales[:found_index]
+                    else:
+                        # Если не нашли, значит это первый запуск или данные устарели
+                        new_sales = []
+                else:
+                    # Первый запуск - не отправляем продажи
+                    new_sales = []
+                
+                # Отправляем новые продажи
+                if new_sales:
+                    message = format_sales(new_sales)
+                    send_telegram_notification(message)
+                    logger.info(f"Найдено {len(new_sales)} новых продаж")
+                
+                # Сохраняем ID последней продажи
+                data["last_sale_id"] = latest_sale_id
+                save_data(data)
             
             # Проверка аппаратов
             problems = check_terminals(driver)
             current_problem_urls = [problem["url"] for problem in problems]
-            new_problems = [problem for problem in problems if problem["url"] not in data["last_notification_urls"]]
+            new_problems = [problem for problem in problems if problem["url"] not in data.get("last_notification_urls", [])]
             if new_problems:
                 send_telegram_notification(format_problems(new_problems))
                 data["last_notification_urls"] = current_problem_urls
+                save_data(data)
             
-            save_data(data)
             logger.info("Автоматическая проверка завершена успешно")
         else:
             logger.error("Ошибка авторизации при автоматической проверке")
