@@ -2,7 +2,7 @@ name: AliveWater Monitoring
 
 on:
   schedule:
-    - cron: '*/5 * * * *'  # Каждые 5 минут
+    - cron: '*/5 * * * *'  # Запускать каждые 5 минут
   workflow_dispatch:
 
 jobs:
@@ -21,14 +21,14 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install selenium python-telegram-bot==20.3 webdriver-manager
+        pip install selenium python-telegram-bot==13.7 webdriver-manager
         
-    - name: Setup Chrome
+    - name: Install Chrome
       run: |
         sudo apt-get update
         sudo apt-get install -y chromium-browser chromium-chromedriver
-        # Проверяем существование ссылки перед созданием
-        [ ! -f "/usr/bin/google-chrome" ] && sudo ln -s /usr/bin/chromium-browser /usr/bin/google-chrome || true
+        # Убираем создание линка, чтобы избежать ошибки
+        # sudo ln -s /usr/bin/chromium-browser /usr/bin/google-chrome
         
     - name: Run monitoring
       env:
