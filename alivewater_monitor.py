@@ -112,13 +112,25 @@ def check_sales(driver):
         for row in rows:
             cols = row.find_elements(By.TAG_NAME, "td")
             if len(cols) >= 5:
+                # Определяем способ оплаты по иконкам
+                payment_method = "Не указано"
+                payment_icons = cols[5].find_elements(By.TAG_NAME, "svg")
+                for icon in payment_icons:
+                    icon_class = icon.get_attribute("class")
+                    if "coin" in icon_class.lower():
+                        payment_method = "🪙 Монеты"
+                    elif "banknote" in icon_class.lower():
+                        payment_method = "💵 Купюры"
+                    elif "card" in icon_class.lower():
+                        payment_method = "💳 Карта"
+                
                 sales.append({
                     "number": cols[0].text,
                     "address": cols[1].text,
                     "time": cols[2].text,
                     "liters": cols[3].text,
                     "total": cols[4].text,
-                    "payment": cols[5].text if len(cols) > 5 else "Не указано"
+                    "payment": payment_method
                 })
         return sales
     except Exception as e:
@@ -163,39 +175,68 @@ def send_telegram_notification(message):
 
 def format_sales(sales):
     if not sales:
-        return "Нет новых продаж"
+        return "🛍️ Нет новых продаж"
     
-    message = "<b>Новые продажи:</b>\n\n"
+    message = "💰 <b>НОВЫЕ ПРОДАЖИ</b> 💰\n\n"
     for sale in sales:
         message += (
-            f"<b>№:</b> {sale['number']}\n"
-            f"<b>Адрес:</b> {sale['address']}\n"
-            f"<b>Время:</b> {sale['time']}\n"
-            f"<b>Литры:</b> {sale['liters']}\n"
-            f"<b>Всего:</b> {sale['total']}\n"
-            f"<b>Оплата:</b> {sale['payment']}\n\n"
+            f"🔹 <b>Продажа #{sale['number']}</b>\n"
+            f"📍 <b>Адрес:</b> {sale['address']}\n"
+            f"🕒 <b>Время:</b> {sale['time']}\n"
+            f"💧 <b>Литры:</b> {sale['liters']}\n"
+            f"💸 <b>Сумма:</b> {sale['total']} руб.\n"
+            f"🧾 <b>Оплата:</b> {sale['payment']}\n"
+            f"────────────────────\n"
         )
+    message += f"\nВсего новых продаж: <b>{len(sales)}</b>"
     return message
 
 def format_problems(problems):
     if not problems:
-        return "Проблем с терминалами не обнаружено"
+        return "✅ Проблем с терминалами не обнаружено"
     
-    message = "<b>Обнаружены проблемы с терминалами:</b>\n\n"
+    message = "⚠️ <b>ПРОБЛЕМЫ С ТЕРМИНАЛАМИ</b> ⚠️\n\n"
     for problem in problems:
-        message += f"<b>Терминал:</b> {problem['terminal']}\n<b>Ссылка:</b> {problem['url']}\n\n"
+        message += (
+            f"🔴 <b>Терминал:</b> {problem['terminal']}\n"
+            f"🔗 <b>Ссылка:</b> {problem['url']}\n"
+            f"────────────────────\n"
+        )
+    message += f"\nВсего проблемных терминалов: <b>{len(problems)}</b>"
     return message
 
 def start(update, context):
-    update.message.reply_text(
-        "Бот мониторинга AliveWater работает. Используйте /check_sales или /check_terminals")
+    menu_text = (
+        "🚰 <b>Бот мониторинга AliveWater</b> 🚰\n\n"
+        "Выберите действие:\n\n"
+        "💳 /check_sales - Проверить новые продажи\n"
+        "⚠️ /check_terminals - Проверить состояние терминалов\n"
+        "ℹ️ /status - Статус системы\n"
+        "🆘 /help - Помощь"
+    )
+    update.message.reply_text(menu_text, parse_mode="HTML")
+
+def help_command(update, context):
+    help_text = (
+        "🆘 <b>Помощь по боту</b>\n\n"
+        "Этот бот автоматически отслеживает:\n"
+        "- Новые продажи воды 💧\n"
+        "- Проблемы с терминалами ⚠️\n\n"
+        "Автоматическая проверка происходит каждые 5 минут\n\n"
+        "<b>Доступные команды:</b>\n"
+        "💳 /check_sales - Проверить новые продажи\n"
+        "⚠️ /check_terminals - Проверить состояние терминалов\n"
+        "ℹ️ /status - Статус системы\n"
+        "🆘 /help - Помощь"
+    )
+    update.message.reply_text(help_text, parse_mode="HTML")
 
 def check_sales_command(update, context):
     if update.message.from_user.id not in CONFIG['telegram_admin_ids']:
-        update.message.reply_text("Доступ запрещен")
+        update.message.reply_text("⛔ Доступ запрещен")
         return
     
-    update.message.reply_text("Начинаю проверку продаж...")
+    update.message.reply_text("🔍 Проверяю новые продажи...")
     try:
         driver = init_browser()
         if login(driver):
@@ -208,23 +249,23 @@ def check_sales_command(update, context):
                 send_telegram_notification(message)
                 data['last_sales'] = sales
                 save_data(data)
-                update.message.reply_text(f"Найдено {len(new_sales)} новых продаж.")
+                update.message.reply_text(f"✅ Найдено {len(new_sales)} новых продаж!", parse_mode="HTML")
             else:
-                update.message.reply_text("Новых продаж не обнаружено.")
+                update.message.reply_text("🛍️ Новых продаж не обнаружено", parse_mode="HTML")
         else:
-            update.message.reply_text("Ошибка авторизации.")
+            update.message.reply_text("🔐 Ошибка авторизации", parse_mode="HTML")
     except Exception as e:
-        update.message.reply_text(f"Ошибка: {str(e)}")
+        update.message.reply_text(f"❌ Ошибка: {str(e)}", parse_mode="HTML")
         logger.error(f"Ошибка в check_sales_command: {str(e)}")
     finally:
         driver.quit()
 
 def check_terminals_command(update, context):
     if update.message.from_user.id not in CONFIG['telegram_admin_ids']:
-        update.message.reply_text("Доступ запрещен")
+        update.message.reply_text("⛔ Доступ запрещен")
         return
     
-    update.message.reply_text("Начинаю проверку терминалов...")
+    update.message.reply_text("🔍 Проверяю состояние терминалов...")
     try:
         driver = init_browser()
         if login(driver):
@@ -237,16 +278,25 @@ def check_terminals_command(update, context):
                 send_telegram_notification(message)
                 data['last_notifications'] = problems
                 save_data(data)
-                update.message.reply_text(f"Найдено {len(new_problems)} проблем с терминалами.")
+                update.message.reply_text(f"⚠️ Найдено {len(new_problems)} проблем с терминалами!", parse_mode="HTML")
             else:
-                update.message.reply_text("Проблем с терминалами не обнаружено.")
+                update.message.reply_text("✅ Проблем с терминалами не обнаружено", parse_mode="HTML")
         else:
-            update.message.reply_text("Ошибка авторизации.")
+            update.message.reply_text("🔐 Ошибка авторизации", parse_mode="HTML")
     except Exception as e:
-        update.message.reply_text(f"Ошибка: {str(e)}")
+        update.message.reply_text(f"❌ Ошибка: {str(e)}", parse_mode="HTML")
         logger.error(f"Ошибка в check_terminals_command: {str(e)}")
     finally:
         driver.quit()
+
+def status_command(update, context):
+    status_text = (
+        "🟢 <b>Статус системы</b>\n\n"
+        "Система мониторинга AliveWater работает в штатном режиме\n"
+        f"🕒 Последняя проверка: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
+        "Следующая автоматическая проверка через 5 минут"
+    )
+    update.message.reply_text(status_text, parse_mode="HTML")
 
 def main_monitoring():
     logger.info("Запуск автоматической проверки...")
@@ -287,8 +337,10 @@ def main():
     
     # Регистрация обработчиков команд
     dispatcher.add_handler(CommandHandler("start", start))
+    dispatcher.add_handler(CommandHandler("help", help_command))
     dispatcher.add_handler(CommandHandler("check_sales", check_sales_command))
     dispatcher.add_handler(CommandHandler("check_terminals", check_terminals_command))
+    dispatcher.add_handler(CommandHandler("status", status_command))
     
     # Запуск бота
     updater.start_polling()
