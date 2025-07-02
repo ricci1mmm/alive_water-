@@ -112,17 +112,32 @@ def check_sales(driver):
         for row in rows:
             cols = row.find_elements(By.TAG_NAME, "td")
             if len(cols) >= 5:
-                # Определяем способ оплаты по иконкам
+                # Определяем способ оплаты по содержимому SVG
                 payment_method = "Не указано"
                 payment_icons = cols[5].find_elements(By.TAG_NAME, "svg")
+                
                 for icon in payment_icons:
-                    icon_class = icon.get_attribute("class")
-                    if "coin" in icon_class.lower():
-                        payment_method = "🪙 Монеты"
-                    elif "banknote" in icon_class.lower():
-                        payment_method = "💵 Купюры"
-                    elif "card" in icon_class.lower():
-                        payment_method = "💳 Карта"
+                    # Получаем содержимое элемента path
+                    paths = icon.find_elements(By.TAG_NAME, "path")
+                    for path in paths:
+                        d_attr = path.get_attribute("d")
+                        
+                        # Определяем по уникальным частям пути
+                        if d_attr:
+                            # Банковская карта
+                            if "v8c0 6.6-5.4 12-12 12" in d_attr:
+                                payment_method = "💳 Карта"
+                                break
+                                
+                            # Купюры
+                            elif "c-53.02 0-96 50.14-96 112" in d_attr:
+                                payment_method = "💵 Купюры"
+                                break
+                                
+                            # Монеты
+                            elif "c-48.6 0-92.6 9-124.5 23.4" in d_attr:
+                                payment_method = "🪙 Монеты"
+                                break
                 
                 sales.append({
                     "number": cols[0].text,
